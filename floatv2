@@ -1,0 +1,207 @@
+--=================================
+-- FLOAT WALK HUB
+-- Title : geizi-hub
+-- Keybind : V
+--=================================
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+local char = player.Character or player.CharacterAdded:Wait()
+local hrp = char:WaitForChild("HumanoidRootPart")
+local humanoid = char:WaitForChild("Humanoid")
+
+--=====================
+-- 設定
+--=====================
+local MAX_SPEED = 26.5
+local STOP_DISTANCE = 0.6
+local HEIGHT_MULTIPLIER = 1.15
+
+--=====================
+-- 状態
+--=====================
+local floating = false
+local savedPos = nil
+local bp, bv
+local originalJumpPower = humanoid.JumpPower
+
+--=====================
+-- 高さ計算（ジャンプ半分＋少し）
+--=====================
+local function getFloatHeight()
+	local half
+	if humanoid.UseJumpPower == false and humanoid.JumpHeight then
+		half = humanoid.JumpHeight * 0.5
+	else
+		half = (humanoid.JumpPower / 7) * 0.5
+	end
+	return half * HEIGHT_MULTIPLIER
+end
+
+--=====================
+-- Float開始
+--=====================
+local function startFloat()
+	if not savedPos then return end
+
+	originalJumpPower = humanoid.JumpPower
+	humanoid.JumpPower = 0
+
+	bp = Instance.new("BodyPosition")
+	bp.MaxForce = Vector3.new(0, math.huge, 0)
+	bp.P = 14000
+	bp.D = 1000
+	bp.Parent = hrp
+
+	bv = Instance.new("BodyVelocity")
+	bv.MaxForce = Vector3.new(8000, 0, 8000)
+	bv.P = 1200
+	bv.Parent = hrp
+end
+
+--=====================
+-- Float終了
+--=====================
+local function stopFloat()
+	if bp then bp:Destroy() bp = nil end
+	if bv then bv:Destroy() bv = nil end
+	humanoid.JumpPower = originalJumpPower
+end
+
+--=====================
+-- 毎フレーム制御
+--=====================
+RunService.RenderStepped:Connect(function()
+	if not floating or not savedPos then return end
+
+	-- Y固定
+	bp.Position = Vector3.new(
+		hrp.Position.X,
+		savedPos.Y,
+		hrp.Position.Z
+	)
+
+	-- XZ移動
+	local dir = Vector3.new(
+		savedPos.X - hrp.Position.X,
+		0,
+		savedPos.Z - hrp.Position.Z
+	)
+
+	local dist = dir.Magnitude
+
+	if dist > STOP_DISTANCE then
+		local speed = math.clamp(dist * 3, 8, MAX_SPEED)
+		bv.Velocity = dir.Unit * speed
+	else
+		-- 到着 → 自動OFF
+		bv.Velocity = Vector3.zero
+		floating = false
+		stopFloat()
+		toggleBtn.Text = "FLOAT : OFF (V)"
+	end
+end)
+
+--=====================
+-- GUI
+--=====================
+local gui = Instance.new("ScreenGui", player.PlayerGui)
+gui.ResetOnSpawn = false
+
+local frame = Instance.new("Frame", gui)
+frame.Size = UDim2.fromOffset(220, 140)
+frame.Position = UDim2.new(0.02, 0, 0.4, 0)
+frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+frame.BorderSizePixel = 0
+frame.Active = true
+frame.Draggable = true
+Instance.new("UICorner", frame).CornerRadius = UDim.new(0,12)
+
+-- タイトル
+local title = Instance.new("TextLabel", frame)
+title.Size = UDim2.new(1, -20, 0, 22)
+title.Position = UDim2.new(0, 10, 0, 6)
+title.Text = "geizi-hub"
+title.Font = Enum.Font.GothamBold
+title.TextSize = 14
+title.TextColor3 = Color3.new(1,1,1)
+title.BackgroundTransparency = 1
+title.TextXAlignment = Enum.TextXAlignment.Left
+
+local function makeButton(text, y)
+	local btn = Instance.new("TextButton", frame)
+	btn.Size = UDim2.new(1,-20,0,30)
+	btn.Position = UDim2.new(0,10,0,y)
+	btn.Text = text
+	btn.Font = Enum.Font.Gotham
+	btn.TextSize = 13
+	btn.TextColor3 = Color3.new(1,1,1)
+	btn.BackgroundColor3 = Color3.fromRGB(45,45,45)
+	btn.BorderSizePixel = 0
+	Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+	return btn
+end
+
+local saveBtn   = makeButton("Save Position", 38)
+toggleBtn       = makeButton("FLOAT : OFF (V)", 78)
+
+--=====================
+-- Save Position
+--=====================
+saveBtn.MouseButton1Click:Connect(function()
+	local h = getFloatHeight()
+	savedPos = Vector3.new(
+		hrp.Position.X,
+		hrp.Position.Y + h,
+		hrp.Position.Z
+	)
+	saveBtn.Text = "Position Saved"
+end)
+
+--=====================
+-- FLOAT切替（GUI）
+--=====================
+toggleBtn.MouseButton1Click:Connect(function()
+	floating = not floating
+	if floating then
+		startFloat()
+		toggleBtn.Text = "FLOAT : ON (V)"
+	else
+		stopFloat()
+		toggleBtn.Text = "FLOAT : OFF (V)"
+	end
+end)
+
+--=====================
+-- FLOAT切替（Vキー）
+--=====================
+UserInputService.InputBegan:Connect(function(input, gp)
+	if gp then return end
+	if input.KeyCode == Enum.KeyCode.V then
+		floating = not floating
+		if floating then
+			startFloat()
+			toggleBtn.Text = "FLOAT : ON (V)"
+		else
+			stopFloat()
+			toggleBtn.Text = "FLOAT : OFF (V)"
+		end
+	end
+end)
+
+--=====================
+-- リスポーン対応
+--=====================
+player.CharacterAdded:Connect(function(c)
+	char = c
+	hrp = c:WaitForChild("HumanoidRootPart")
+	humanoid = c:WaitForChild("Humanoid")
+
+	floating = false
+	stopFloat()
+	toggleBtn.Text = "FLOAT : OFF (V)"
+	saveBtn.Text = "Save Position"
+end)
